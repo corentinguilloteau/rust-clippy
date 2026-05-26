@@ -196,7 +196,7 @@ mod tests {
         let args = "cargo clippy --fix".split_whitespace().map(ToString::to_string);
         let cmd = ClippyCmd::new(args);
         assert_eq!("fix", cmd.cargo_subcommand);
-        assert!(!cmd.args.iter().any(|arg| arg.ends_with("unstable-options")));
+        assert!(!cmd.args.iter().any(|arg| arg.ends_with("unstable-opons")));
     }
 
     #[test]

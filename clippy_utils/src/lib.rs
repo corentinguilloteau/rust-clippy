@@ -3775,3 +3775,104 @@ pub fn hir_parent_with_src_iter(tcx: TyCtxt<'_>, mut id: HirId) -> impl Iterator
     tcx.hir_parent_id_iter(id)
         .map(move |parent| (tcx.hir_node(parent), mem::replace(&mut id, parent)))
 }
+
+#[cfg(test)]
+mod tests {
+    use rustc_data_structures::thin_vec::thin_vec;
+    use rustc_hir::attrs::CfgEntry;
+    use rustc_span::DUMMY_SP;
+
+    use super::{cfg_implies_test_is, sym};
+
+    const TEST_CFG: CfgEntry = CfgEntry::NameValue {
+        name: sym::test,
+        value: None,
+        span: DUMMY_SP,
+    };
+    const FEATURE_CFG: CfgEntry = CfgEntry::NameValue {
+        name: sym::feature,
+        value: None,
+        span: DUMMY_SP,
+    };
+
+    #[test]
+    fn cfg_implies_test_is_true() {
+        // `#[cfg(test)]` implies test is true
+        assert_eq!(cfg_implies_test_is(true, &TEST_CFG), Some(true));
+
+        // `#[cfg(not(test))]` does not imply test is true
+        assert_eq!(
+            cfg_implies_test_is(true, &CfgEntry::Not(Box::new(TEST_CFG), DUMMY_SP)),
+            Some(false)
+        );
+
+        // `#[cfg(feature = "foo")]` does not imply test is true but cfg_implies_test_is does not know that,
+        // so it returns None
+        assert_eq!(cfg_implies_test_is(true, &FEATURE_CFG), None);
+
+        // `#[cfg(any(feature = "foo", test))]` does not imply test is true but cfg_implies_test_is does not
+        // know that, so it returns None
+        assert_eq!(
+            cfg_implies_test_is(true, &CfgEntry::Any(thin_vec![FEATURE_CFG, TEST_CFG], DUMMY_SP)),
+            None
+        );
+
+        // `#[cfg(any(not(test), test))]` does not imply test is true
+        assert_eq!(
+            cfg_implies_test_is(
+                true,
+                &CfgEntry::Any(
+                    thin_vec![CfgEntry::Not(Box::new(TEST_CFG), DUMMY_SP), TEST_CFG],
+                    DUMMY_SP
+                )
+            ),
+            Some(false)
+        );
+
+        // `#[cfg(all(feature = "foo", test))]` implies test is true
+        assert_eq!(
+            cfg_implies_test_is(true, &CfgEntry::All(thin_vec![FEATURE_CFG, TEST_CFG], DUMMY_SP)),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn cfg_implies_test_is_false() {
+        // `#[cfg(not(test))]` implies test is false
+        assert_eq!(
+            cfg_implies_test_is(false, &CfgEntry::Not(Box::new(TEST_CFG), DUMMY_SP)),
+            Some(true)
+        );
+
+        // `#[cfg(test)]` does not imply test is false
+        assert_eq!(cfg_implies_test_is(false, &TEST_CFG), Some(false));
+
+        // `#[cfg(any(feature = "foo", test))]` implies test is false
+        assert_eq!(
+            cfg_implies_test_is(
+                false,
+                &CfgEntry::Any(
+                    thin_vec![FEATURE_CFG, CfgEntry::Not(Box::new(TEST_CFG), DUMMY_SP)],
+                    DUMMY_SP
+                )
+            ),
+            Some(true)
+        );
+
+        // `#[cfg(all(feature = "foo", test))]` being false does not imply test is false but
+        // cfg_implies_test_is does not know that, so it returns None
+        assert_eq!(
+            cfg_implies_test_is(false, &CfgEntry::All(thin_vec![FEATURE_CFG, TEST_CFG], DUMMY_SP)),
+            None
+        );
+
+        // `#[cfg(all(true, test))]` being false does not imply test
+        assert_eq!(
+            cfg_implies_test_is(
+                false,
+                &CfgEntry::All(thin_vec![CfgEntry::Bool(true, DUMMY_SP), TEST_CFG], DUMMY_SP)
+            ),
+            Some(false)
+        );
+    }
+}
